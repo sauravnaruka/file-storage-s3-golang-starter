@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"os"
+	"path"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -36,7 +38,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	video , err := cfg.db.GetVideo(videoID)
+	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't find video", err)
 		return
@@ -81,12 +83,30 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	key := getAssetPath(mediaType)
+	directory := ""
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not able to determine the aspect ratio", err)
+		return
+	}
+	switch aspectRatio {
+	case "16:9":
+		directory = "landscape"
+	case "9:16":
+		directory = "portrait"
+	default:
+		directory = "other"
+	}
 
-	bucketCfg := &s3.PutObjectInput {
-		Bucket: aws.String(cfg.s3Bucket),
-		Key: aws.String(key),
-		Body: tempFile,
+	key := getAssetPath(mediaType)
+	key = path.Join(directory, key)
+
+	fmt.Print(key)
+
+	bucketCfg := &s3.PutObjectInput{
+		Bucket:      aws.String(cfg.s3Bucket),
+		Key:         aws.String(key),
+		Body:        tempFile,
 		ContentType: aws.String(mediaType),
 	}
 
@@ -96,7 +116,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	url :=  cfg.getObjectURL(key)
+	url := cfg.getObjectURL(key)
 
 	video.VideoURL = &url
 	err = cfg.db.UpdateVideo(video)
